@@ -115,11 +115,6 @@ app.post("/process-referral", async (req, res) => {
       [user.login]
     );
 
-    const [existingUser] = await db.query(
-      "SELECT * FROM users WHERE login = ?",
-      [user.login]
-    );
-
     if (existingUser.length > 0) {
       // Пользователь уже существует
       // Делаю обновление данных
