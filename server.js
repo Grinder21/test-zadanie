@@ -23,61 +23,138 @@ db.connect((err) => {
 
 app.use(express.json());
 
-app.get("/users", (req, res) => {
-  db.query("SELECT * FROM users", (err, result) => {
-    if (err) throw err;
+app.get("/users", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM users");
     res.json(result);
-  });
+  } catch (err) {
+    console.error("Ошибка при выполнении запроса к БД:", err.message);
+    res.status(500).json({ message: "Ошибка сервера" });
+  }
 });
 
 // 1 - принятие и обработка POST запросов с данными в формате JSON"
 
-app.post("/process-referral", (req, res) => {
+app.post("/process-referral", async (req, res) => {
   const requestData = req.body;
 
-  // Валидация данных
-
-  // Сделал безопасный доступ к вложенным свойствам
+  // Безопасный доступ к вложенным свойствам
   const user = requestData?.Data?.Users?.[0];
   const document = user?.Documents?.[0];
 
-  if (!user || !document) {
-    res.status(400).json({ message: "Некорректные данные в запросе" });
-    return;
+  if (
+    !user ||
+    !user.login ||
+    !user.password ||
+    !user.sex ||
+    !user.lastName ||
+    !user.firstName
+  ) {
+    return res
+      .status(400)
+      .json({ message: "Все поля пользователя обязательны" });
   }
 
-  // Хеширование пароля
-  const hashedPassword = bcrypt.hashSync(user.password, 10);
+  if (
+    typeof user.login !== "string" ||
+    user.login.length < 4 ||
+    user.login.length > 20
+  ) {
+    return res
+      .status(400)
+      .json({ message: "Логин должен быть строкой от 4 до 20 символов" });
+  }
 
-  db.query(
-    `INSERT INTO users (login, password, gender_id, type_id, last_name, first_name)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-       login = VALUES(login), password = VALUES(password), gender_id = VALUES(gender_id),
-       type_id = VALUES(type_id), last_name = VALUES(last_name), first_name = VALUES(first_name)`,
-    [user.login, hashedPassword, user.sex, 2, user.lastName, user.firstName],
-    (err, result) => {
-      if (err) {
-        console.error("Ошибка при выполнении запроса к БД:", err.message);
-        return res.status(500).json({ message: "Ошибка сервера" });
-      }
+  if (
+    typeof user.password !== "string" ||
+    user.password.length < 6 ||
+    user.password.length > 30
+  ) {
+    return res
+      .status(400)
+      .json({ message: "Пароль должен быть строкой от 6 до 30 символов" });
+  }
 
-      db.query(
+  if (typeof user.sex !== "number" || (user.sex !== 1 && user.sex !== 2)) {
+    return res
+      .status(400)
+      .json({ message: "Пол должен быть числом (1 - мужской, 2 - женский)" });
+  }
+
+  if (
+    typeof user.lastName !== "string" ||
+    user.lastName.length < 1 ||
+    user.lastName.length > 50
+  ) {
+    return res
+      .status(400)
+      .json({ message: "Фамилия должна быть строкой от 1 до 50 символов" });
+  }
+
+  if (
+    typeof user.firstName !== "string" ||
+    user.firstName.length < 1 ||
+    user.firstName.length > 50
+  ) {
+    return res
+      .status(400)
+      .json({ message: "Имя должно быть строкой от 1 до 50 символов" });
+  }
+
+  if (!user || !document) {
+    return res.status(400).json({ message: "Некорректные данные в запросе" });
+  }
+
+  try {
+    // Хеширование пароля
+    const hashedPassword = bcrypt.hashSync(user.password, 10);
+
+    // Проверяю наличие пользователя в БД
+    const [existingUser] = await db.query(
+      "SELECT * FROM users WHERE login = ?",
+      [user.login]
+    );
+
+    const [existingUser] = await db.query(
+      "SELECT * FROM users WHERE login = ?",
+      [user.login]
+    );
+
+    if (existingUser.length > 0) {
+      // Пользователь уже существует
+      // Делаю обновление данных
+      await db.query(
+        `UPDATE users
+         SET password = ?, gender_id = ?, type_id = ?, last_name = ?, first_name = ?
+         WHERE login = ?`,
+        [hashedPassword, user.sex, 2, user.lastName, user.firstName, user.login]
+      );
+    } else {
+      // Пользователя нет в БД, выполняем операции для создания нового пользователя
+
+      // Вставка нового пользователя
+      const result = await db.query(
+        `INSERT INTO users (login, password, gender_id, type_id, last_name, first_name)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        [user.login, hashedPassword, user.sex, 2, user.lastName, user.firstName]
+      );
+
+      // Беру ID только что созданного пользователя
+      const userId = result.insertId;
+
+      // Вставка документа
+      await db.query(
         `INSERT INTO documents (user_id, type_id, data)
-               VALUES (?, ?, ?)
-               ON DUPLICATE KEY UPDATE
-               user_id = VALUES(user_id), type_id = VALUES(type_id), data = VALUES(data)`,
-        [result.insertId, document.documentType_id, JSON.stringify(document)],
-        (err, result) => {
-          if (err) {
-            console.error("Ошибка при выполнении запроса к БД:", err.message);
-            return res.status(500).json({ message: "Ошибка сервера" });
-          }
-          res.json({ message: "Документ успешно обработан" });
-        }
+               VALUES (?, ?, ?)`,
+        [userId, document.documentType_id, JSON.stringify(document)]
       );
     }
-  );
+
+    res.json({ message: "Документ успешно обработан" });
+  } catch (err) {
+    console.error("Ошибка при выполнении запроса к БД:", err.message);
+    return res.status(500).json({ message: "Ошибка сервера" });
+  }
 });
 
 // 2 - "авторизация пользователя по данным из БД"
