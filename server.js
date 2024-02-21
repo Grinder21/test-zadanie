@@ -35,11 +35,16 @@ app.get("/users", (req, res) => {
 app.post("/process-referral", (req, res) => {
   const requestData = req.body;
 
-  // Валидация данных (можно использовать какие-либо библиотеки)
+  // Валидация данных
 
-  // Обязательные поля для создания записей в БД
+  // Сделал безопасный доступ к вложенным свойствам
   const user = requestData?.Data?.Users?.[0];
   const document = user?.Documents?.[0];
+
+  if (!user || !document) {
+    res.status(400).json({ message: "Некорректные данные в запросе" });
+    return;
+  }
 
   // Хеширование пароля
   const hashedPassword = bcrypt.hashSync(user.password, 10);
@@ -52,7 +57,10 @@ app.post("/process-referral", (req, res) => {
        type_id = VALUES(type_id), last_name = VALUES(last_name), first_name = VALUES(first_name)`,
     [user.login, hashedPassword, user.sex, 2, user.lastName, user.firstName],
     (err, result) => {
-      if (err) throw err;
+      if (err) {
+        console.error("Ошибка при выполнении запроса к БД:", err.message);
+        return res.status(500).json({ message: "Ошибка сервера" });
+      }
 
       db.query(
         `INSERT INTO documents (user_id, type_id, data)
@@ -61,7 +69,10 @@ app.post("/process-referral", (req, res) => {
                user_id = VALUES(user_id), type_id = VALUES(type_id), data = VALUES(data)`,
         [result.insertId, document.documentType_id, JSON.stringify(document)],
         (err, result) => {
-          if (err) throw err;
+          if (err) {
+            console.error("Ошибка при выполнении запроса к БД:", err.message);
+            return res.status(500).json({ message: "Ошибка сервера" });
+          }
           res.json({ message: "Документ успешно обработан" });
         }
       );
@@ -81,7 +92,10 @@ app.post("/login", (req, res) => {
     "SELECT * FROM Users WHERE login = ? AND password = ?",
     [login, decodedPassword],
     (err, result) => {
-      if (err) throw err;
+      if (err) {
+        console.error("Ошибка при выполнении запроса к БД:", err.message);
+        return res.status(500).json({ message: "Ошибка сервера" });
+      }
 
       if (result.length > 0) {
         // Пользователь авторизован
@@ -106,7 +120,10 @@ app.get("/user/:userId", (req, res) => {
        WHERE users.id = ?`,
     [userId],
     (err, result) => {
-      if (err) throw err;
+      if (err) {
+        console.error("Ошибка при выполнении запроса к БД:", err.message);
+        return res.status(500).json({ message: "Ошибка сервера" });
+      }
 
       if (result.length > 0) {
         const user = {
@@ -134,7 +151,10 @@ app.get("/users", (req, res) => {
 
   if (isAdmin) {
     db.query("SELECT * FROM users", (err, usersResult) => {
-      if (err) throw err;
+      if (err) {
+        console.error("Ошибка при выполнении запроса к БД:", err.message);
+        return res.status(500).json({ message: "Ошибка сервера" });
+      }
 
       const users = usersResult.map((user) => ({ ...user, documents: [] }));
 
