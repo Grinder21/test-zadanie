@@ -1,5 +1,6 @@
 const express = require("express");
 const mysql = require("mysql");
+const bcrypt = require("bcrypt");
 require("dotenv").config();
 const app = express();
 const port = process.env.PORT;
@@ -37,8 +38,11 @@ app.post("/process-referral", (req, res) => {
   // Валидация данных (можно использовать какие-либо библиотеки)
 
   // Обязательные поля для создания записей в БД
-  const user = requestData.Data.Users[0];
-  const document = user.Documents[0];
+  const user = requestData?.Data?.Users?.[0];
+  const document = user?.Documents?.[0];
+
+  // Хеширование пароля
+  const hashedPassword = bcrypt.hashSync(user.password, 10);
 
   db.query(
     `INSERT INTO users (login, password, gender_id, type_id, last_name, first_name)
@@ -46,7 +50,7 @@ app.post("/process-referral", (req, res) => {
        ON DUPLICATE KEY UPDATE
        login = VALUES(login), password = VALUES(password), gender_id = VALUES(gender_id),
        type_id = VALUES(type_id), last_name = VALUES(last_name), first_name = VALUES(first_name)`,
-    [user.login, "hashed_password", user.sex, 2, user.lastName, user.firstName],
+    [user.login, hashedPassword, user.sex, 2, user.lastName, user.firstName],
     (err, result) => {
       if (err) throw err;
 
@@ -55,7 +59,7 @@ app.post("/process-referral", (req, res) => {
                VALUES (?, ?, ?)
                ON DUPLICATE KEY UPDATE
                user_id = VALUES(user_id), type_id = VALUES(type_id), data = VALUES(data)`,
-        [user.id, document.documentType_id, JSON.stringify(document)],
+        [result.insertId, document.documentType_id, JSON.stringify(document)],
         (err, result) => {
           if (err) throw err;
           res.json({ message: "Документ успешно обработан" });
