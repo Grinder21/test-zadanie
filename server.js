@@ -142,3 +142,7 @@ app.get("/users", (req, res) => {
       .json({ message: "Недостаточно прав для просмотра информации" });
   }
 });
+
+app.listen(port, () => {
+  console.log(`Сервер запущен на порту ${port}`);
+});
